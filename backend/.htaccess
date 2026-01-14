@@ -1,0 +1,14 @@
+# Route all API requests through index.php
+# CORS is handled in PHP (backend/utils/headers.php) for better control
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /quiz_platform/backend/
+    
+    # Don't rewrite if file or directory exists
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Route everything to index.php
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
