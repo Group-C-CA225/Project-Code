@@ -41,8 +41,8 @@ if (!$teacher) {
 
 $tid = $teacher['id'];
 
-// 1. Total Students across all quizzes
-$sqlStudents = "SELECT COUNT(*) as total FROM students s 
+// 1. Total unique Students across all quizzes
+$sqlStudents = "SELECT COUNT(DISTINCT s.student_identifier) as total FROM students s 
                 JOIN quizzes q ON s.quiz_id = q.id 
                 WHERE q.teacher_id = :tid";
 $stmt = $db->prepare($sqlStudents);
@@ -57,9 +57,9 @@ $stmt = $db->prepare($sqlAvg);
 $stmt->execute([':tid' => $tid]);
 $avgScore = $stmt->fetch(PDO::FETCH_ASSOC)['avg_score'];
 
-// 3. Recent Quizzes with Submission Counts
+// 3. Recent Quizzes with unique student attempt counts (only SUBMITTED students count as attempts)
 $sqlRecent = "SELECT q.id, q.title, q.access_code, q.created_at, q.status, q.start_time, q.end_time,
-                     (SELECT COUNT(*) FROM students WHERE quiz_id = q.id) as attempt_count
+                     (SELECT COUNT(DISTINCT student_identifier) FROM students WHERE quiz_id = q.id AND status = 'SUBMITTED') as attempt_count
               FROM quizzes q 
               WHERE q.teacher_id = :tid 
               ORDER BY q.created_at DESC LIMIT 10";

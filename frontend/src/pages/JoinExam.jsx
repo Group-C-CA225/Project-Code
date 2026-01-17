@@ -85,36 +85,14 @@ const JoinExam = () => {
             console.error('Error checking submission:', err);
         }
         
-        // Encode student info in URL parameters for the new window
-        const encodedStudentId = encodeURIComponent(studentId.trim());
-        const encodedStudentClass = encodeURIComponent(studentClass.trim());
-        
-        // Open exam in new maximized window with student data in URL
-        const examUrl = `${window.location.origin}/exam/${code}?studentId=${encodedStudentId}&studentClass=${encodedStudentClass}`;
-        const newWindow = window.open(
-            examUrl,
-            'ExamWindow',
-            'width=' + screen.width + ',height=' + screen.height + ',left=0,top=0,toolbar=no,menubar=no,scrollbars=yes,resizable=no,location=no,directories=no,status=no'
-        );
-        
-        if (newWindow) {
-            // Try to maximize the window (browser dependent)
-            try {
-                newWindow.moveTo(0, 0);
-                newWindow.resizeTo(screen.availWidth, screen.availHeight);
-            } catch (e) {
-                console.log('Could not maximize window:', e);
+        // Navigate to exam page normally (same window) with student data in state
+        setLoading(false);
+        navigate(`/exam/${code}`, {
+            state: {
+                studentId: studentId.trim(),
+                studentClass: studentClass.trim()
             }
-            
-            // Focus the new window
-            newWindow.focus();
-            
-            // Reset loading state (no alert needed - window opens automatically)
-            setLoading(false);
-        } else {
-            setLoading(false);
-            alert('Popup blocked! Please allow popups for this site and try again.');
-        }
+        });
         
         return false;
     };
@@ -147,12 +125,6 @@ const JoinExam = () => {
                         <span className="text-xs text-[#6B7280]">Quiz Code:</span>
                         <span className="ml-2 font-mono font-bold text-[#0EA5E9] text-base">{code}</span>
                     </div>
-                    {quizInfo?.class && (
-                        <div className="mt-3 inline-block bg-yellow-50 border-2 border-yellow-400 px-4 py-2 rounded-lg">
-                            <p className="text-xs text-yellow-800 font-semibold">Required Class:</p>
-                            <p className="text-lg font-bold text-yellow-900">{quizInfo.class}</p>
-                        </div>
-                    )}
                 </div>
 
                 {/* Form */}
@@ -180,7 +152,7 @@ const JoinExam = () => {
                     {/* Class/Section */}
                     <div>
                         <label className="block text-xs font-semibold text-[#111827] mb-1.5">
-                            Class / Section {quizInfo?.class && <span className="text-red-600">*</span>}
+                            Class / Section
                         </label>
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
@@ -191,15 +163,10 @@ const JoinExam = () => {
                                 value={studentClass}
                                 onChange={(e) => setStudentClass(e.target.value)}
                                 className="w-full pl-9 pr-3 py-2.5 border-2 border-[#E5E7EB] rounded-lg focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9] focus:ring-opacity-10 outline-none transition-all text-[#111827] text-sm"
-                                placeholder={quizInfo?.class ? `Enter: ${quizInfo.class}` : "e.g., Grade 10-A"}
+                                placeholder="e.g., Grade 10-A"
                                 required
                             />
                         </div>
-                        {quizInfo?.class && (
-                            <p className="mt-1 text-xs text-yellow-700">
-                                ⚠️ Must match required class exactly
-                            </p>
-                        )}
                     </div>
 
                     {/* Submit Button */}

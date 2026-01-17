@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MdArrowBack, MdPeople, MdTrendingUp, MdCheckCircle, MdAccessTime } from 'react-icons/md';
+import { MdArrowBack, MdPeople, MdTrendingUp, MdCheckCircle, MdAccessTime, MdPause, MdPlayArrow, MdBlock, MdCheck } from 'react-icons/md';
 import api from '../utils/api';
 import TeacherLayout from '../components/TeacherLayout';
 
@@ -10,6 +10,7 @@ const RealtimeMonitor = () => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [actionLoading, setActionLoading] = useState(false);
 
     const fetchMonitoringData = async () => {
         try {
@@ -27,10 +28,10 @@ const RealtimeMonitor = () => {
     useEffect(() => {
         fetchMonitoringData();
         
-        // Poll every 3 seconds for real-time updates
+        // Poll every 1 second for fast real-time updates
         const interval = setInterval(() => {
             fetchMonitoringData();
-        }, 3000);
+        }, 1000);
 
         return () => clearInterval(interval);
     }, [id]);
@@ -49,6 +50,49 @@ const RealtimeMonitor = () => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const handleGlobalControl = async (action) => {
+        setActionLoading(true);
+        try {
+            const response = await api.post('/api/realtime/control', {
+                quiz_id: id,
+                action: action
+            });
+            
+            if (response.success) {
+                // Refresh data after action
+                setTimeout(() => fetchMonitoringData(), 500);
+            } else {
+                setError(response.message || 'Action failed');
+            }
+        } catch (err) {
+            setError(err.message || 'Failed to perform action');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleStudentControl = async (sessionId, action) => {
+        setActionLoading(true);
+        try {
+            const response = await api.post('/api/realtime/control', {
+                quiz_id: id,
+                session_id: sessionId,
+                action: action
+            });
+            
+            if (response.success) {
+                // Refresh data after action
+                setTimeout(() => fetchMonitoringData(), 500);
+            } else {
+                setError(response.message || 'Action failed');
+            }
+        } catch (err) {
+            setError(err.message || 'Failed to perform action');
+        } finally {
+            setActionLoading(false);
+        }
     };
 
     if (loading) {
@@ -97,9 +141,30 @@ const RealtimeMonitor = () => {
                             <p className="text-[#6B7280]">{data?.quiz_title}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 bg-green-50 border-2 border-green-500 px-4 py-2 rounded-lg">
-                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-green-700 font-semibold">LIVE</span>
+                    <div className="flex items-center gap-4">
+                        {/* Global Control Buttons */}
+                        <div className="flex items-center gap-2 bg-white border border-[#E5E7EB] rounded-lg p-1">
+                            <button
+                                onClick={() => handleGlobalControl('pause')}
+                                disabled={actionLoading || (data?.total_active || 0) === 0}
+                                className="flex items-center gap-2 px-4 py-2 rounded-md bg-red-500 text-white hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+                            >
+                                <MdPause className="text-lg" />
+                                Pause All
+                            </button>
+                            <button
+                                onClick={() => handleGlobalControl('resume')}
+                                disabled={actionLoading || (data?.total_active || 0) === 0}
+                                className="flex items-center gap-2 px-4 py-2 rounded-md bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+                            >
+                                <MdPlayArrow className="text-lg" />
+                                Resume All
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 bg-green-50 border-2 border-green-500 px-4 py-2 rounded-lg">
+                            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-green-700 font-semibold">LIVE</span>
+                        </div>
                     </div>
                 </div>
 
@@ -162,6 +227,12 @@ const RealtimeMonitor = () => {
                                         </th>
                                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-[#111827]">
                                             Last Activity
+                                        </th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-[#111827]">
+                                            Violations
+                                        </th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-[#111827]">
+                                            Actions
                                         </th>
                                     </tr>
                                 </thead>
@@ -233,6 +304,56 @@ const RealtimeMonitor = () => {
                                                         }`}>
                                                             {formatTimeAgo(session.seconds_since_heartbeat)}
                                                         </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {session.violations_count > 0 ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-sm font-semibold">
+                                                                ⚠️ {session.violations_count} Tab Switch{session.violations_count > 1 ? 'es' : ''}
+                                                            </span>
+                                                            {session.seconds_since_violation !== null && session.seconds_since_violation < 30 && (
+                                                                <span className="text-xs text-red-600 font-medium animate-pulse">
+                                                                    Just now
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-sm text-green-600 font-medium">✓ No violations</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        {session.status === 'PAUSED' ? (
+                                                            <button
+                                                                onClick={() => handleStudentControl(session.session_id, 'resume_student')}
+                                                                disabled={actionLoading}
+                                                                className="flex items-center gap-1 px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
+                                                            >
+                                                                <MdPlayArrow className="text-sm" />
+                                                                Resume
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleStudentControl(session.session_id, 'pause_student')}
+                                                                disabled={actionLoading}
+                                                                className="flex items-center gap-1 px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
+                                                            >
+                                                                <MdPause className="text-sm" />
+                                                                Pause
+                                                            </button>
+                                                        )}
+                                                        {isStale && (
+                                                            <button
+                                                                onClick={() => handleStudentControl(session.session_id, 'pause_student')}
+                                                                disabled={actionLoading}
+                                                                className="flex items-center gap-1 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
+                                                                title="Suspicious activity detected"
+                                                            >
+                                                                <MdBlock className="text-sm" />
+                                                                Block
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

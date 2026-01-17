@@ -104,9 +104,9 @@ class AnalyticsController {
         // Ensure avg_score is valid (between 0-100 or null)
         $avgScore = $avgScore !== null ? round(floatval($avgScore), 1) : 0;
 
-        // 3. Recent Quizzes with Submission Counts
+        // 3. Recent Quizzes with Submission Counts (only SUBMITTED students count as attempts)
         $sqlRecent = "SELECT q.id, q.title, q.access_code, q.created_at, q.status, q.start_time, q.end_time, q.class, q.description,
-                             (SELECT COUNT(*) FROM students WHERE quiz_id = q.id) as attempt_count
+                             (SELECT COUNT(*) FROM students WHERE quiz_id = q.id AND status = 'SUBMITTED') as attempt_count
                       FROM quizzes q 
                       WHERE q.teacher_id = :tid 
                       ORDER BY q.created_at DESC LIMIT 10";

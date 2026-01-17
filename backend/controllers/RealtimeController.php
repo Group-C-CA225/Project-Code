@@ -91,9 +91,29 @@ class RealtimeController {
                 $studentId = $this->db->lastInsertId();
             }
             
+            // Check if student already has an active session for this quiz
+            $checkSessionStmt = $this->db->prepare("SELECT id, session_token FROM exam_sessions 
+                                                    WHERE student_id = :sid AND quiz_id = :qid 
+                                                    AND status IN ('ACTIVE', 'PAUSED')
+                                                    ORDER BY id DESC LIMIT 1");
+            $checkSessionStmt->execute([':sid' => $studentId, ':qid' => $quizId]);
+            $existingSession = $checkSessionStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingSession) {
+                // Return existing session token instead of creating a new one
+                http_response_code(200);
+                echo json_encode([
+                    "success" => true,
+                    "session_id" => $existingSession['id'],
+                    "session_token" => $existingSession['session_token'],
+                    "message" => "Existing session found"
+                ]);
+                return;
+            }
+            
             $sql = "INSERT INTO exam_sessions 
-                    (student_id, quiz_id, session_token, total_questions, time_remaining_seconds, status) 
-                    VALUES (:sid, :qid, :token, :total, :time, 'ACTIVE')";
+                    (student_id, quiz_id, session_token, total_questions, time_remaining_seconds, status, last_activity, last_heartbeat) 
+                    VALUES (:sid, :qid, :token, :total, :time, 'ACTIVE', NOW(), NOW())";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([
                 ':sid' => $studentId,
@@ -152,7 +172,9 @@ class RealtimeController {
                 $params[':time'] = $timeRemaining;
             }
             
+            // Update both last_heartbeat and last_activity for proper monitoring
             $updates[] = "last_heartbeat = NOW()";
+            $updates[] = "last_activity = NOW()";
             
             $sql = "UPDATE exam_sessions SET " . implode(', ', $updates) . " WHERE session_token = :token AND status = 'ACTIVE'";
             $stmt = $this->db->prepare($sql);
@@ -195,6 +217,51 @@ class RealtimeController {
             
             http_response_code(200);
             echo json_encode(["success" => true]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["success" => false, "message" => $e->getMessage()]);
+        }
+    }
+
+    // POST /api/realtime/session/violation
+    public function reportViolation() {
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        $sessionToken = $data['session_token'] ?? null;
+        $violationType = $data['violation_type'] ?? 'TAB_SWITCH';
+        
+        if (!$sessionToken) {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Session token required"]);
+            return;
+        }
+        
+        try {
+            // Increment violations count for this session
+            // Note: If violations_count column doesn't exist, this will fail gracefully
+            try {
+                $sql = "UPDATE exam_sessions 
+                        SET violations_count = COALESCE(violations_count, 0) + 1,
+                            last_violation = NOW(),
+                            last_heartbeat = NOW()
+                        WHERE session_token = :token AND status IN ('ACTIVE', 'PAUSED')";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute([':token' => $sessionToken]);
+            } catch (PDOException $e) {
+                // If violations_count column doesn't exist, try without it
+                if (strpos($e->getMessage(), 'violations_count') !== false) {
+                    $sql = "UPDATE exam_sessions 
+                            SET last_heartbeat = NOW()
+                            WHERE session_token = :token AND status IN ('ACTIVE', 'PAUSED')";
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute([':token' => $sessionToken]);
+                } else {
+                    throw $e;
+                }
+            }
+            
+            http_response_code(200);
+            echo json_encode(["success" => true, "message" => "Violation reported"]);
         } catch (Exception $e) {
             http_response_code(500);
             echo json_encode(["success" => false, "message" => $e->getMessage()]);

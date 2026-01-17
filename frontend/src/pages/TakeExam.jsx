@@ -60,6 +60,7 @@ const TakeExam = () => {
     const [examStartTime, setExamStartTime] = useState(null);
     const [sessionToken, setSessionToken] = useState(null);
     const [quizId, setQuizId] = useState(null);
+    const [isPaused, setIsPaused] = useState(false);
 
     // --- REAL-TIME SESSION TRACKING ---
     const startRealtimeSession = async (qId, totalQs, timeRemainingSecs) => {
@@ -81,12 +82,19 @@ const TakeExam = () => {
         if (!sessionToken) return;
         
         try {
-            await api.post('/api/realtime/session/update', {
+            const response = await api.post('/api/realtime/session/update', {
                 session_token: sessionToken,
                 current_question_index: currentQIndex,
                 questions_answered: Object.keys(answers).length,
                 time_remaining_seconds: timeRemaining
             });
+            
+            // Check if session is paused
+            if (response.status === 'PAUSED') {
+                setIsPaused(true);
+            } else if (response.status === 'ACTIVE') {
+                setIsPaused(false);
+            }
         } catch (err) {
             console.error('Failed to update session:', err);
         }
@@ -104,13 +112,16 @@ const TakeExam = () => {
         }
     };
 
-    // Update session every 5 seconds (heartbeat)
+    // Update session every 2 seconds (heartbeat) for faster monitoring
     useEffect(() => {
         if (!sessionToken || !quizStatus || quizStatus !== 'ACTIVE') return;
         
+        // Send immediate heartbeat on mount
+        updateRealtimeSession();
+        
         const interval = setInterval(() => {
             updateRealtimeSession();
-        }, 5000);
+        }, 2000);
         
         return () => clearInterval(interval);
     }, [sessionToken, currentQIndex, answers, timeRemaining, quizStatus]);
@@ -295,6 +306,52 @@ const TakeExam = () => {
         }
     };
 
+    // Handle page unload - end session immediately for real-time monitoring
+    useEffect(() => {
+        if (!sessionToken) return;
+
+        const handlePageUnload = () => {
+            // End session immediately when page closes/unloads
+            // Use sendBeacon for reliable delivery even if page is closing
+            try {
+                const payload = JSON.stringify({
+                    session_token: sessionToken
+                });
+                
+                // Use sendBeacon with proper content type header
+                const blob = new Blob([payload], { type: 'application/json' });
+                // Use same API base URL as the rest of the app
+                const url = `http://localhost/quiz_platform/backend/api/realtime/session/end`;
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(url, blob);
+                } else {
+                    // Fallback: synchronous XMLHttpRequest (older browsers)
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', url, false); // false = synchronous
+                    xhr.setRequestHeader('Content-Type', 'application/json');
+                    xhr.send(payload);
+                }
+            } catch (err) {
+                // Silent fail - page is closing anyway
+            }
+        };
+
+        // Handle multiple unload events for maximum compatibility
+        window.addEventListener('beforeunload', handlePageUnload);
+        window.addEventListener('pagehide', handlePageUnload);
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                handlePageUnload();
+            }
+        });
+
+        return () => {
+            window.removeEventListener('beforeunload', handlePageUnload);
+            window.removeEventListener('pagehide', handlePageUnload);
+            // Note: visibilitychange listener doesn't need cleanup
+        };
+    }, [sessionToken]);
+
     // Handle window close - auto-submit exam
     useEffect(() => {
         if (!studentId || !questions.length) return;
@@ -454,24 +511,94 @@ const TakeExam = () => {
 
     const currentQ = questions[currentQIndex];
 
+    // E. Paused Exam Overlay
+    if (isPaused) {
+        return (
+            <div className="h-screen flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600">
+                <div className="bg-white p-10 rounded-2xl shadow-2xl text-center max-w-md mx-4">
+                    {/* Paused Icon */}
+                    <div className="mb-6">
+                        <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg className="w-12 h-12 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    <h1 className="text-3xl font-bold text-[#111827] mb-2">Exam Paused</h1>
+                    <p className="text-[#6B7280] mb-6">Your exam has been paused by the teacher. Please wait for it to be resumed.</p>
+                    
+                    {/* Student Info */}
+                    <div className="bg-[#F9FAFB] p-4 rounded-lg mb-6 text-left">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-[#6B7280]">Student:</span>
+                            <span className="font-semibold text-[#111827]">{studentId}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-[#6B7280]">Class:</span>
+                            <span className="font-semibold text-[#111827]">{studentClass}</span>
+                        </div>
+                    </div>
+                    
+                    {/* Progress Info */}
+                    <div className="bg-blue-50 p-4 rounded-lg mb-6">
+                        <p className="text-sm text-blue-600 mb-1">Your Progress:</p>
+                        <p className="text-lg font-bold text-blue-800">
+                            Question {currentQIndex + 1} of {questions.length}
+                        </p>
+                        <div className="w-full bg-blue-200 h-2 rounded-full mt-2">
+                            <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ width: `${((currentQIndex + 1) / questions.length) * 100}%` }}
+                            ></div>
+                        </div>
+                    </div>
+                    
+                    {/* Animated Dots */}
+                    <div className="flex items-center justify-center gap-2 text-sm text-orange-600">
+                        <span>Waiting for teacher to resume</span>
+                        <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-orange-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-2 h-2 bg-orange-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-2 h-2 bg-orange-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     // D. Main Exam Interface
     return (
         <div className="h-screen flex flex-col bg-[#EEEEEE]">
             {/* Security Component */}
-            <SecureGuard studentId={studentId} onBlock={() => setIsBlocked(true)} />
+            <SecureGuard studentId={studentId} sessionToken={sessionToken} onBlock={() => setIsBlocked(true)} isSubmitting={isSubmitting} />
 
             {/* Top Bar */}
-            <div className="h-16 bg-[#222831] text-white flex justify-between items-center px-6 shadow-md z-10">
+            <div className={`h-16 text-white flex justify-between items-center px-6 shadow-md z-10 ${
+                isPaused ? 'bg-orange-600' : 'bg-[#222831]'
+            }`}>
                 <div>
-                    <h1 className="font-bold text-lg tracking-wide text-[#00ADB5]">{quizTitle}</h1>
+                    <h1 className={`font-bold text-lg tracking-wide ${isPaused ? 'text-white' : 'text-[#00ADB5]'}`}>
+                        {quizTitle}
+                    </h1>
                     <span className="text-xs text-gray-400">Code: {code}</span>
                 </div>
                 <div className="flex items-center gap-4">
+                    {/* Pause Indicator */}
+                    {isPaused && (
+                        <div className="flex items-center gap-2 bg-white bg-opacity-20 px-3 py-1 rounded">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <span className="text-sm font-bold">PAUSED</span>
+                        </div>
+                    )}
+                    
                     {/* Countdown Timer */}
                     {timeRemaining !== null && (
                         <div className={`px-4 py-2 rounded-lg font-mono font-bold text-lg border-2 ${
                             timeRemaining < 300 ? 'bg-red-900 border-red-500 text-red-200 animate-pulse' : 
                             timeRemaining < 600 ? 'bg-yellow-900 border-yellow-500 text-yellow-200' : 
+                            isPaused ? 'bg-white bg-opacity-20 border-white text-white' :
                             'bg-[#393E46] border-[#00ADB5] text-[#00ADB5]'
                         }`}>
                             ⏱ {formatTime(timeRemaining)}
@@ -481,8 +608,11 @@ const TakeExam = () => {
                         <div className="text-gray-300 text-sm">{studentId}</div>
                         <div className="text-gray-400 text-xs">{studentClass}</div>
                     </div>
-                    <div className="bg-[#393E46] px-3 py-1 rounded text-[#00ADB5] font-mono font-bold border border-gray-600">
-                        LIVE EXAM
+                    <div className={`px-3 py-1 rounded font-mono font-bold border ${
+                        isPaused ? 'bg-white bg-opacity-20 text-white border-white' : 
+                        'bg-[#393E46] text-[#00ADB5] border-gray-600'
+                    }`}>
+                        {isPaused ? 'PAUSED' : 'LIVE EXAM'}
                     </div>
                 </div>
             </div>
@@ -543,14 +673,17 @@ const TakeExam = () => {
                                             key={i}
                                             type="button"
                                             onClick={(e) => {
+                                                if (isPaused) return;
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                                 handleAnswer(opt);
                                             }}
+                                            disabled={isPaused}
                                             className={`w-full text-left p-3 md:p-4 rounded-lg border-2 transition-all duration-200 flex items-center group text-sm md:text-base
                                                 ${answers[currentQIndex] === opt 
                                                     ? 'border-[#00ADB5] bg-teal-50 text-[#222831] font-bold shadow-sm' 
-                                                    : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}`}
+                                                    : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}
+                                                ${isPaused ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
                                             <span className={`flex items-center justify-center w-7 h-7 mr-3 rounded-full text-xs transition
                                                 ${answers[currentQIndex] === opt ? 'bg-[#00ADB5] text-white' : 'bg-gray-200 text-gray-500 group-hover:bg-gray-300'}`}>
@@ -565,14 +698,17 @@ const TakeExam = () => {
                                     <button 
                                         type="button"
                                         onClick={(e) => {
+                                            if (isPaused) return;
                                             e.preventDefault();
                                             e.stopPropagation();
                                             handleAnswer('True');
                                         }}
+                                        disabled={isPaused}
                                         className={`w-full text-left p-3 md:p-4 rounded-lg border-2 transition-all duration-200 flex items-center group
                                             ${answers[currentQIndex] === 'True' 
                                                 ? 'border-[#00ADB5] bg-teal-50 text-[#222831] font-bold shadow-sm' 
-                                                : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}`}
+                                                : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}
+                                            ${isPaused ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     >
                                         <span className={`flex items-center justify-center w-7 h-7 mr-3 rounded-full text-xs transition
                                             ${answers[currentQIndex] === 'True' ? 'bg-[#00ADB5] text-white' : 'bg-gray-200 text-gray-500 group-hover:bg-gray-300'}`}>
@@ -583,14 +719,17 @@ const TakeExam = () => {
                                     <button 
                                         type="button"
                                         onClick={(e) => {
+                                            if (isPaused) return;
                                             e.preventDefault();
                                             e.stopPropagation();
                                             handleAnswer('False');
                                         }}
+                                        disabled={isPaused}
                                         className={`w-full text-left p-3 md:p-4 rounded-lg border-2 transition-all duration-200 flex items-center group
                                             ${answers[currentQIndex] === 'False' 
                                                 ? 'border-[#00ADB5] bg-teal-50 text-[#222831] font-bold shadow-sm' 
-                                                : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}`}
+                                                : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50 text-gray-700'}
+                                            ${isPaused ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     >
                                         <span className={`flex items-center justify-center w-7 h-7 mr-3 rounded-full text-xs transition
                                             ${answers[currentQIndex] === 'False' ? 'bg-[#00ADB5] text-white' : 'bg-gray-200 text-gray-500 group-hover:bg-gray-300'}`}>
@@ -605,18 +744,19 @@ const TakeExam = () => {
                                     placeholder="Type your detailed answer here..."
                                     value={answers[currentQIndex] || ''}
                                     onChange={(e) => handleAnswer(e.target.value)}
+                                    disabled={isPaused}
                                 />
                             )}
                         </div>
 
                         {/* Footer Controls */}
-                        <div className="flex justify-end mt-6 mb-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 mb-6">
                             {currentQIndex === questions.length - 1 ? (
                                 <button 
                                     onClick={submitExam}
-                                    disabled={isSubmitting}
-                                    className={`px-6 md:px-8 py-3 bg-[#00ADB5] text-white font-bold rounded-lg shadow-lg hover:brightness-110 flex items-center gap-2 transition transform hover:scale-105
-                                        ${isSubmitting ? 'opacity-70 cursor-wait' : ''}`}
+                                    disabled={isSubmitting || isPaused}
+                                    className={`w-full sm:w-auto px-6 md:px-8 py-3 bg-[#00ADB5] text-white font-bold rounded-lg shadow-lg hover:brightness-110 flex items-center justify-center gap-2 transition transform hover:scale-105
+                                        ${isSubmitting || isPaused ? 'opacity-70 cursor-wait' : ''}`}
                                 >
                                     {isSubmitting ? (
                                         <>
@@ -626,6 +766,8 @@ const TakeExam = () => {
                                             </svg>
                                             GRADING...
                                         </>
+                                    ) : isPaused ? (
+                                        "EXAM PAUSED"
                                     ) : (
                                         "SUBMIT EXAM"
                                     )}
@@ -633,11 +775,17 @@ const TakeExam = () => {
                             ) : (
                                 <button 
                                     onClick={nextQuestion}
-                                    className="px-6 md:px-8 py-3 bg-[#222831] text-white font-bold rounded-lg hover:bg-black shadow-md transition"
+                                    disabled={isPaused}
+                                    className={`w-full sm:w-auto px-6 md:px-8 py-3 bg-[#222831] text-white font-bold rounded-lg hover:bg-black shadow-md transition
+                                        ${isPaused ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
-                                    Next Question →
+                                    {isPaused ? "EXAM PAUSED" : "Next Question →"}
                                 </button>
                             )}
+                            {/* Question counter for mobile */}
+                            <div className="text-sm text-gray-600 text-center sm:text-right">
+                                {currentQIndex + 1} / {questions.length}
+                            </div>
                         </div>
 
                     </div>

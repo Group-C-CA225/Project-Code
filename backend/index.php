@@ -52,6 +52,7 @@ $router->get('/api/submissions/list', 'AnalyticsController@getSubmissionsList');
 $router->post('/api/realtime/session/start', 'RealtimeController@startSession');
 $router->post('/api/realtime/session/update', 'RealtimeController@updateSession');
 $router->post('/api/realtime/session/end', 'RealtimeController@endSession');
+$router->post('/api/realtime/session/violation', 'RealtimeController@reportViolation');
 $router->get('/api/realtime/monitor', 'RealtimeController@getQuizMonitoring'); // Usage: ?quiz_id=123
 $router->post('/api/realtime/cleanup', 'RealtimeController@cleanupSessions');
 

@@ -25,16 +25,17 @@ class AIService {
         $studentAnswerEscaped = addslashes($studentAnswer);
 
         $prompt = "
-You are an intelligent academic grader. Your task is to evaluate a student's written answer against a model answer.
+You are a fair and understanding academic grader. Evaluate a student's written answer by focusing on CONCEPTUAL UNDERSTANDING and MEANING, not exact word matching.
 
-IMPORTANT GUIDELINES:
-- Focus on MEANING and CONTENT, not exact word matching
-- If the student's answer conveys the same meaning/concept as the model answer (even with different wording), it should receive a high score
-- Consider synonyms, paraphrasing, and different ways of expressing the same idea
-- Ignore minor spelling errors and typos if the meaning is clear
-- The student answer may use different words but still be correct
-- Rate accuracy from 0 to 100 based on how well the answer matches the model answer in meaning
-- Provide clear, helpful feedback (1-2 sentences)
+CRITICAL GRADING PRINCIPLES:
+- ACCEPT answers that demonstrate understanding of the core concepts, even if phrased differently
+- Use CONCEPTUAL MATCHING: Does the student understand the main ideas? If yes, score 70-100
+- Accept different phrasings, word choices, and ways of explaining the same concept
+- Look for KEY CONCEPTS being addressed, not exact word-for-word matching
+- Ignore grammar mistakes, typos, and informal language if meaning is clear
+- If student shows understanding but explains it differently, give FULL or HIGH credit (80-100)
+- Only give LOW scores (0-40) if the answer is clearly wrong, off-topic, or shows no understanding
+- For PARTIALLY correct answers that show some understanding, give 50-70 points
 
 Question: {$questionTextEscaped}
 
@@ -42,12 +43,19 @@ Model Answer (Expected Response): {$modelAnswerEscaped}
 
 Student Answer: {$studentAnswerEscaped}
 
-Evaluate the student's answer. If it correctly addresses the question and conveys the same meaning as the model answer (even with different wording or minor typos), give it a high score. If it's partially correct, give partial credit. If it's incorrect or off-topic, give a low score.
+GRADING INSTRUCTIONS:
+1. Analyze if the student's answer demonstrates UNDERSTANDING of the key concepts in the model answer
+2. If the concepts match (even with different wording), score 80-100
+3. If mostly correct with minor omissions, score 70-79
+4. If partially correct, score 50-69
+5. Only score below 50 if the answer is incorrect or shows little/no understanding
 
-Return ONLY valid JSON in this format (no markdown, no code blocks):
+IMPORTANT: Be GENEROUS. If the student's answer shows they understand the concepts, even if worded differently, give a HIGH score (80-100).
+
+Return ONLY valid JSON (no markdown, no code blocks):
 {
     \"score\": 85,
-    \"feedback\": \"Your answer correctly explains the concept, though you used slightly different terminology.\"
+    \"feedback\": \"Your answer demonstrates good understanding of the concept.\"
 }
         ";
 
@@ -57,7 +65,7 @@ Return ONLY valid JSON in this format (no markdown, no code blocks):
                 ["role" => "system", "content" => "You are a JSON-only API. Do not output markdown."],
                 ["role" => "user", "content" => $prompt]
             ],
-            "temperature" => 0.3 // Low temperature = more consistent/strict grading
+            "temperature" => 0.5 // Medium temperature = balanced between consistency and understanding flexibility
         ];
 
         $ch = curl_init($this->apiUrl);
