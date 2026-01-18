@@ -65,9 +65,6 @@ class RealtimeController {
             return;
         }
         
-        // Generate session token
-        $sessionToken = bin2hex(random_bytes(32));
-        
         try {
             // Check if student record exists, create if not
             $checkStmt = $this->db->prepare("SELECT id FROM students WHERE quiz_id = :qid AND student_identifier = :sid");
@@ -91,26 +88,18 @@ class RealtimeController {
                 $studentId = $this->db->lastInsertId();
             }
             
-            // Check if student already has an active session for this quiz
-            $checkSessionStmt = $this->db->prepare("SELECT id, session_token FROM exam_sessions 
-                                                    WHERE student_id = :sid AND quiz_id = :qid 
-                                                    AND status IN ('ACTIVE', 'PAUSED')
-                                                    ORDER BY id DESC LIMIT 1");
-            $checkSessionStmt->execute([':sid' => $studentId, ':qid' => $quizId]);
-            $existingSession = $checkSessionStmt->fetch(PDO::FETCH_ASSOC);
+            // End any existing active sessions for this student/quiz combination
+            $endExistingStmt = $this->db->prepare("
+                UPDATE exam_sessions 
+                SET status = 'ABANDONED', last_heartbeat = NOW() 
+                WHERE student_id = :sid AND quiz_id = :qid AND status IN ('ACTIVE', 'PAUSED')
+            ");
+            $endExistingStmt->execute([':sid' => $studentId, ':qid' => $quizId]);
             
-            if ($existingSession) {
-                // Return existing session token instead of creating a new one
-                http_response_code(200);
-                echo json_encode([
-                    "success" => true,
-                    "session_id" => $existingSession['id'],
-                    "session_token" => $existingSession['session_token'],
-                    "message" => "Existing session found"
-                ]);
-                return;
-            }
+            // Generate new session token
+            $sessionToken = bin2hex(random_bytes(32));
             
+            // Create new session
             $sql = "INSERT INTO exam_sessions 
                     (student_id, quiz_id, session_token, total_questions, time_remaining_seconds, status, last_activity, last_heartbeat) 
                     VALUES (:sid, :qid, :token, :total, :time, 'ACTIVE', NOW(), NOW())";
@@ -126,7 +115,7 @@ class RealtimeController {
             $sessionId = $this->db->lastInsertId();
             
             // Update quiz active sessions count
-            $this->db->exec("UPDATE quizzes SET active_sessions_count = active_sessions_count + 1 WHERE id = $quizId");
+            $this->updateActiveSessionsCount($quizId);
             
             http_response_code(201);
             echo json_encode([
@@ -176,12 +165,21 @@ class RealtimeController {
             $updates[] = "last_heartbeat = NOW()";
             $updates[] = "last_activity = NOW()";
             
-            $sql = "UPDATE exam_sessions SET " . implode(', ', $updates) . " WHERE session_token = :token AND status = 'ACTIVE'";
+            $sql = "UPDATE exam_sessions SET " . implode(', ', $updates) . " WHERE session_token = :token AND status IN ('ACTIVE', 'PAUSED')";
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
             
+            // Get current session status to return to client
+            $statusStmt = $this->db->prepare("SELECT status, paused_by_teacher FROM exam_sessions WHERE session_token = :token");
+            $statusStmt->execute([':token' => $sessionToken]);
+            $session = $statusStmt->fetch(PDO::FETCH_ASSOC);
+            
             http_response_code(200);
-            echo json_encode(["success" => true]);
+            echo json_encode([
+                "success" => true,
+                "status" => $session['status'] ?? 'ACTIVE',
+                "paused_by_teacher" => (bool)($session['paused_by_teacher'] ?? false)
+            ]);
         } catch (Exception $e) {
             http_response_code(500);
             echo json_encode(["success" => false, "message" => $e->getMessage()]);
@@ -367,6 +365,110 @@ class RealtimeController {
             http_response_code(500);
             echo json_encode(["success" => false, "message" => $e->getMessage()]);
         }
+    }
+    
+    // POST /api/realtime/control - Pause/Resume controls
+    public function controlExam() {
+        $tid = $this->getAuthTeacherId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        $quizId = $data['quiz_id'] ?? null;
+        $action = $data['action'] ?? null;
+        $sessionId = $data['session_id'] ?? null;
+        
+        if (!$quizId || !$action) {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Missing required fields"]);
+            return;
+        }
+        
+        // Verify quiz ownership
+        $stmt = $this->db->prepare("SELECT id FROM quizzes WHERE id = :qid AND teacher_id = :tid");
+        $stmt->execute([':qid' => $quizId, ':tid' => $tid]);
+        if (!$stmt->fetch()) {
+            http_response_code(403);
+            echo json_encode(["success" => false, "message" => "Unauthorized"]);
+            return;
+        }
+        
+        try {
+            switch ($action) {
+                case 'pause':
+                    // Pause all active sessions for this quiz
+                    $stmt = $this->db->prepare("
+                        UPDATE exam_sessions 
+                        SET status = 'PAUSED', paused_at = NOW(), paused_by_teacher = TRUE 
+                        WHERE quiz_id = :qid AND status = 'ACTIVE'
+                    ");
+                    $stmt->execute([':qid' => $quizId]);
+                    $affected = $stmt->rowCount();
+                    echo json_encode(["success" => true, "message" => "Paused $affected sessions"]);
+                    break;
+                    
+                case 'resume':
+                    // Resume all paused sessions for this quiz
+                    $stmt = $this->db->prepare("
+                        UPDATE exam_sessions 
+                        SET status = 'ACTIVE', paused_at = NULL, paused_by_teacher = FALSE 
+                        WHERE quiz_id = :qid AND status = 'PAUSED'
+                    ");
+                    $stmt->execute([':qid' => $quizId]);
+                    $affected = $stmt->rowCount();
+                    echo json_encode(["success" => true, "message" => "Resumed $affected sessions"]);
+                    break;
+                    
+                case 'pause_student':
+                    // Pause specific student session
+                    if (!$sessionId) {
+                        http_response_code(400);
+                        echo json_encode(["success" => false, "message" => "Session ID required"]);
+                        return;
+                    }
+                    $stmt = $this->db->prepare("
+                        UPDATE exam_sessions 
+                        SET status = 'PAUSED', paused_at = NOW(), paused_by_teacher = TRUE 
+                        WHERE id = :sid AND quiz_id = :qid AND status = 'ACTIVE'
+                    ");
+                    $stmt->execute([':sid' => $sessionId, ':qid' => $quizId]);
+                    echo json_encode(["success" => true, "message" => "Student session paused"]);
+                    break;
+                    
+                case 'resume_student':
+                    // Resume specific student session
+                    if (!$sessionId) {
+                        http_response_code(400);
+                        echo json_encode(["success" => false, "message" => "Session ID required"]);
+                        return;
+                    }
+                    $stmt = $this->db->prepare("
+                        UPDATE exam_sessions 
+                        SET status = 'ACTIVE', paused_at = NULL, paused_by_teacher = FALSE 
+                        WHERE id = :sid AND quiz_id = :qid AND status = 'PAUSED'
+                    ");
+                    $stmt->execute([':sid' => $sessionId, ':qid' => $quizId]);
+                    echo json_encode(["success" => true, "message" => "Student session resumed"]);
+                    break;
+                    
+                default:
+                    http_response_code(400);
+                    echo json_encode(["success" => false, "message" => "Invalid action"]);
+            }
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["success" => false, "message" => $e->getMessage()]);
+        }
+    }
+    
+    private function updateActiveSessionsCount($quizId) {
+        $stmt = $this->db->prepare("
+            UPDATE quizzes 
+            SET active_sessions_count = (
+                SELECT COUNT(*) FROM exam_sessions 
+                WHERE quiz_id = ? AND status = 'ACTIVE'
+            ) 
+            WHERE id = ?
+        ");
+        $stmt->execute([$quizId, $quizId]);
     }
 }
 ?>

@@ -177,6 +177,30 @@ class AuthController {
             "message" => "Password changed successfully"
         ]);
     }
+    
+    // POST /api/teacher/forgot-password - Request password reset
+    public function forgotPassword() {
+        $data = json_decode(file_get_contents("php://input"));
+        
+        if (!isset($data->email)) {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Email is required"]);
+            exit;
+        }
+        
+        // Forward to password reset service
+        $resetData = json_encode(['action' => 'request', 'email' => $data->email]);
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => 'Content-Type: application/json',
+                'content' => $resetData
+            ]
+        ]);
+        
+        $result = file_get_contents(__DIR__ . '/../api/password-reset.php', false, $context);
+        echo $result;
+    }
 
     private function getAuthTeacherId() {
         $authHeader = null;

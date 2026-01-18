@@ -4,8 +4,23 @@ class AIService {
     private $apiUrl = "https://api.openai.com/v1/chat/completions"; // Or Google Gemini Endpoint
 
     public function __construct() {
-        // Get API key from environment variable or use configured key
-        $this->apiKey = getenv('OPENAI_API_KEY') ?: "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";
+        // Load environment variables from .env file
+        $this->loadEnv();
+        
+        // Get API key from environment variable
+        $this->apiKey = getenv('OPENAI_API_KEY') ?: '';
+    }
+    
+    private function loadEnv() {
+        $envFile = __DIR__ . '/../.env';
+        if (file_exists($envFile)) {
+            $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                if (strpos(trim($line), '#') === 0) continue;
+                list($key, $value) = explode('=', $line, 2);
+                putenv(trim($key) . '=' . trim($value));
+            }
+        }
     }
 
     public function gradeWrittenAnswer($questionText, $modelAnswer, $studentAnswer) {
@@ -15,7 +30,7 @@ class AIService {
         }
 
         // If API key not configured, use simple similarity check
-        if ($this->apiKey === "YOUR_API_KEY_HERE") {
+        if (empty($this->apiKey) || $this->apiKey === "YOUR_API_KEY_HERE") {
             return $this->fallbackGrading($modelAnswer, $studentAnswer);
         }
 

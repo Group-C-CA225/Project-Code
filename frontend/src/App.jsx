@@ -12,6 +12,8 @@ import Students from "./pages/Students";
 import ThankYou from "./pages/ThankYou";
 import TeacherProfile from "./pages/TeacherProfile";
 import RealtimeMonitor from "./pages/RealtimeMonitor";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 // Protected Route Component
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem("teacher_token");
@@ -24,6 +26,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/dashboard"
           element={

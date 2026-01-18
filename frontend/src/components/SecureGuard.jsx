@@ -1,13 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const SecureGuard = ({ studentId, sessionToken, onBlock, isSubmitting = false }) => {
+  const violationTimeoutRef = useRef(null);
+  const isMonitoringRef = useRef(true);
+
   useEffect(() => {
     // Don't enforce security during submission/navigation
     if (isSubmitting) {
+      isMonitoringRef.current = false;
       return;
     }
 
+    isMonitoringRef.current = true;
+
     const handleViolation = async (message, violationType = 'TAB_SWITCH') => {
+      if (!isMonitoringRef.current) return;
+      
       alert(message);
       
       // Report violation to backend so teacher can see it
@@ -32,16 +40,43 @@ const SecureGuard = ({ studentId, sessionToken, onBlock, isSubmitting = false })
     };
 
     const handleVisibilityChange = () => {
-      // Lock immediately when tab becomes hidden/inactive
-      if (document.hidden && !isSubmitting) {
-        handleViolation("Tab switching detected! Your exam is being terminated.");
+      if (!isMonitoringRef.current) return;
+      
+      if (document.hidden) {
+        // Give a 3-second grace period for quick tab switches (like checking monitor)
+        violationTimeoutRef.current = setTimeout(() => {
+          if (document.hidden && isMonitoringRef.current) {
+            handleViolation("Extended tab switching detected! Your exam is being terminated.");
+          }
+        }, 3000);
+      } else {
+        // Tab became visible again - cancel the violation timeout
+        if (violationTimeoutRef.current) {
+          clearTimeout(violationTimeoutRef.current);
+          violationTimeoutRef.current = null;
+        }
       }
     };
 
     const handleBlur = () => {
-      // Lock immediately when window loses focus (but not during submission)
-      if (!document.hidden && !isSubmitting) {
-        handleViolation("Window focus lost! Your exam is being terminated.");
+      if (!isMonitoringRef.current) return;
+      
+      // Only trigger on actual window blur, not document visibility change
+      if (!document.hidden) {
+        // Give a 2-second grace period for window focus changes
+        violationTimeoutRef.current = setTimeout(() => {
+          if (!document.hasFocus() && isMonitoringRef.current) {
+            handleViolation("Window focus lost for extended period! Your exam is being terminated.");
+          }
+        }, 2000);
+      }
+    };
+
+    const handleFocus = () => {
+      // Cancel any pending violation when window regains focus
+      if (violationTimeoutRef.current) {
+        clearTimeout(violationTimeoutRef.current);
+        violationTimeoutRef.current = null;
       }
     };
 
@@ -130,6 +165,7 @@ const SecureGuard = ({ studentId, sessionToken, onBlock, isSubmitting = false })
     // Add event listeners
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
     document.addEventListener("contextmenu", handleContextMenu);
     document.addEventListener("copy", handleCopy);
     document.addEventListener("cut", handleCut);
@@ -138,8 +174,13 @@ const SecureGuard = ({ studentId, sessionToken, onBlock, isSubmitting = false })
     document.addEventListener("selectstart", handleSelectStart);
 
     return () => {
+      isMonitoringRef.current = false;
+      if (violationTimeoutRef.current) {
+        clearTimeout(violationTimeoutRef.current);
+      }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
       document.removeEventListener("contextmenu", handleContextMenu);
       document.removeEventListener("copy", handleCopy);
       document.removeEventListener("cut", handleCut);
