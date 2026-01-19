@@ -8,6 +8,7 @@ import TakeExam from "./pages/TakeExam";
 import JoinExam from "./pages/JoinExam";
 import ExamResults from "./pages/ExamResults";
 import Register from "./pages/Register";
+import VerifyEmail from "./pages/VerifyEmail";
 import Students from "./pages/Students";
 import ThankYou from "./pages/ThankYou";
 import TeacherProfile from "./pages/TeacherProfile";
@@ -26,6 +27,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route

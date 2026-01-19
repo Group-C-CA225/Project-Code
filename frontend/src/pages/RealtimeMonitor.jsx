@@ -326,7 +326,7 @@ const RealtimeMonitor = () => {
                                                     <div className="flex items-center gap-2">
                                                         {session.status === 'PAUSED' ? (
                                                             <button
-                                                                onClick={() => handleStudentControl(session.session_id, 'resume_student')}
+                                                                onClick={() => handleStudentControl(session.session_id, 'resume')}
                                                                 disabled={actionLoading}
                                                                 className="flex items-center gap-1 px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
                                                             >
@@ -335,7 +335,7 @@ const RealtimeMonitor = () => {
                                                             </button>
                                                         ) : (
                                                             <button
-                                                                onClick={() => handleStudentControl(session.session_id, 'pause_student')}
+                                                                onClick={() => handleStudentControl(session.session_id, 'pause')}
                                                                 disabled={actionLoading}
                                                                 className="flex items-center gap-1 px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
                                                             >
@@ -345,7 +345,7 @@ const RealtimeMonitor = () => {
                                                         )}
                                                         {isStale && (
                                                             <button
-                                                                onClick={() => handleStudentControl(session.session_id, 'pause_student')}
+                                                                onClick={() => handleStudentControl(session.session_id, 'block')}
                                                                 disabled={actionLoading}
                                                                 className="flex items-center gap-1 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
                                                                 title="Suspicious activity detected"
@@ -354,6 +354,15 @@ const RealtimeMonitor = () => {
                                                                 Block
                                                             </button>
                                                         )}
+                                                        <button
+                                                            onClick={() => handleStudentControl(session.session_id, 'cancel')}
+                                                            disabled={actionLoading}
+                                                            className="flex items-center gap-1 px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition text-sm"
+                                                            title="Cancel student's exam"
+                                                        >
+                                                            <MdCheck className="text-sm" />
+                                                            Cancel
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>

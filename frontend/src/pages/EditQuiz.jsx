@@ -13,6 +13,7 @@ const EditQuiz = () => {
     const [duration, setDuration] = useState(60);
     const [classFilter, setClassFilter] = useState('');
     const [shuffleQuestions, setShuffleQuestions] = useState(false);
+    const [showResults, setShowResults] = useState(false);
     const [questions, setQuestions] = useState([]);
 
     // Load quiz data
@@ -37,6 +38,7 @@ const EditQuiz = () => {
                 setDescription(desc.trim());
                 setDuration(quiz.duration_minutes || 60);
                 setClassFilter(quiz.class || '');
+                setShowResults(quiz.show_results_to_students || false);
                 
                 // Map questions with IDs
                 const questionsWithIds = (quiz.questions || []).map(q => ({
@@ -364,7 +366,8 @@ const EditQuiz = () => {
                 title,
                 description: descriptionWithSettings,
                 duration_minutes: duration,
-                class: classFilter || null
+                class: classFilter || null,
+                show_results_to_students: showResults
             });
 
             // Save/update each question
@@ -494,6 +497,18 @@ const EditQuiz = () => {
                                 />
                                 <label htmlFor="shuffleQuestions" className="ml-3 text-sm text-gray-700">
                                     <span className="font-medium">Shuffle question order</span> - Each student sees questions in random order
+                                </label>
+                            </div>
+                            <div className="flex items-center">
+                                <input
+                                    type="checkbox"
+                                    id="showResults"
+                                    checked={showResults}
+                                    onChange={(e) => setShowResults(e.target.checked)}
+                                    className="w-5 h-5 text-[#0EA5E9] border-gray-300 rounded focus:ring-[#0EA5E9]"
+                                />
+                                <label htmlFor="showResults" className="ml-3 text-sm text-gray-700">
+                                    <span className="font-medium">Allow students to see their results</span> - Students can view detailed results after submission
                                 </label>
                             </div>
                         </div>

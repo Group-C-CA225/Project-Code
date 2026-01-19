@@ -45,6 +45,7 @@ const TakeExam = () => {
     const [error, setError] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
+    const [isActivating, setIsActivating] = useState(false); // New state for transition animation
     const isSubmittingRef = useRef(false); // Track if we're submitting to prevent beforeunload warning
     
     // Exam Data
@@ -94,6 +95,10 @@ const TakeExam = () => {
                 setIsPaused(true);
             } else if (response.status === 'ACTIVE') {
                 setIsPaused(false);
+            } else if (response.status === 'ABANDONED') {
+                // Session was cancelled/blocked by teacher
+                setIsBlocked(true);
+                return;
             }
         } catch (err) {
             console.error('Failed to update session:', err);
@@ -134,7 +139,19 @@ const TakeExam = () => {
                 
                 // Normalize status (handle case variations)
                 const normalizedStatus = res.quiz.status ? res.quiz.status.toUpperCase().trim() : 'INACTIVE';
-                setQuizStatus(normalizedStatus);
+                
+                // Detect transition from INACTIVE to ACTIVE
+                if (quizStatus === 'INACTIVE' && normalizedStatus === 'ACTIVE') {
+                    setIsActivating(true);
+                    // Show activating animation for 1.5 seconds
+                    setTimeout(() => {
+                        setIsActivating(false);
+                        setQuizStatus(normalizedStatus);
+                    }, 1500);
+                } else {
+                    setQuizStatus(normalizedStatus);
+                }
+                
                 setQuizSchedule({
                     start_time: res.quiz.start_time,
                     end_time: res.quiz.end_time
@@ -195,12 +212,12 @@ const TakeExam = () => {
             fetchExam();
         }
 
-        // Poll every 10 seconds to check if quiz becomes active
+        // Poll more frequently (every 3 seconds) to detect quiz activation quickly
         const interval = setInterval(() => {
             if (quizStatus !== 'ACTIVE') {
                 fetchExam();
             }
-        }, 10000);
+        }, 3000);
 
         return () => clearInterval(interval);
     }, [code, quizStatus]);
@@ -238,6 +255,13 @@ const TakeExam = () => {
     };
 
     const nextQuestion = () => {
+        // Check if current question is answered
+        const currentAnswer = answers[currentQIndex];
+        if (!currentAnswer || currentAnswer.trim() === '') {
+            alert('Please answer the current question before proceeding to the next one.');
+            return;
+        }
+        
         if (currentQIndex < questions.length - 1) {
             setCurrentQIndex(currentQIndex + 1);
         }
@@ -247,7 +271,23 @@ const TakeExam = () => {
 
     // --- 3. SUBMIT EXAM TO AI ---
     const submitExam = async (isAutoSubmit = false) => {
-        if (!isAutoSubmit && !window.confirm("Are you sure you want to finish the exam?")) return;
+        // Check if all questions are answered (unless auto-submit due to time)
+        if (!isAutoSubmit) {
+            const unansweredQuestions = [];
+            questions.forEach((q, index) => {
+                const answer = answers[index];
+                if (!answer || answer.trim() === '') {
+                    unansweredQuestions.push(index + 1);
+                }
+            });
+            
+            if (unansweredQuestions.length > 0) {
+                alert(`Please answer all questions before submitting. Unanswered questions: ${unansweredQuestions.join(', ')}`);
+                return;
+            }
+            
+            if (!window.confirm("Are you sure you want to finish the exam?")) return;
+        }
 
         setIsSubmitting(true);
         isSubmittingRef.current = true; // Mark as submitting to prevent beforeunload warning
@@ -271,29 +311,21 @@ const TakeExam = () => {
 
             const res = await api.post('/api/exam/submit', payload);
             
-            // Navigate to results page if enabled
+            // Automatically show results if enabled by teacher
             if (res.show_results && res.student_id) {
-                // Close the secure exam window and open results in parent/new window
-                if (window.opener) {
-                    // Opened as popup - open results in parent window
-                    window.opener.location.href = `/exam-results?student_id=${res.student_id}`;
-                    // Close the secure exam window
-                    setTimeout(() => window.close(), 500);
-                } else {
-                    // Same window - navigate to results
-                    window.location.href = `/exam-results?student_id=${res.student_id}`;
-                }
+                // Use React Router navigation for smooth transition
+                navigate(`/exam-results?student_id=${res.student_id}`);
             } else {
-                // Results not available, show alert and close
+                // Results not available - show success message and redirect to thank you page
                 if (!isAutoSubmit) {
                     alert(`Exam Submitted Successfully!\nYour Score: ${res.final_score}%`);
                 }
                 
-                // Close the window if it was opened as a popup
+                // Close popup window or navigate to thank you page
                 if (window.opener) {
                     window.close();
                 } else {
-                    navigate('/');
+                    navigate('/thank-you');
                 }
             }
         } catch (err) {
@@ -396,6 +428,50 @@ const TakeExam = () => {
         };
     }, [quizStatus, questions, answers, studentId, studentClass]);
 
+    // Block browser navigation (back/forward buttons) during exam
+    useEffect(() => {
+        if (!studentId || !questions.length || quizStatus !== 'ACTIVE') return;
+
+        // Push a dummy state to prevent back navigation
+        const blockNavigation = () => {
+            window.history.pushState(null, '', window.location.href);
+        };
+
+        // Handle popstate (back/forward button clicks)
+        const handlePopState = (e) => {
+            e.preventDefault();
+            // Push state again to stay on current page
+            window.history.pushState(null, '', window.location.href);
+            
+            // Show warning to student
+            alert('Navigation is blocked during the exam. Please complete your exam first.');
+        };
+
+        // Disable browser shortcuts that could navigate away
+        const handleKeyDown = (e) => {
+            // Block Alt+Left (back), Alt+Right (forward), F5 (refresh), Ctrl+R (refresh)
+            if ((e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+                e.key === 'F5' || 
+                (e.ctrlKey && e.key === 'r') ||
+                (e.ctrlKey && e.key === 'R')) {
+                e.preventDefault();
+                alert('Navigation shortcuts are blocked during the exam.');
+            }
+        };
+
+        // Initial block
+        blockNavigation();
+        
+        // Listen for navigation attempts and keyboard shortcuts
+        window.addEventListener('popstate', handlePopState);
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [studentId, questions, quizStatus]);
+
     // --- 4. RENDER STATES ---
 
     // A. Security Blocked View
@@ -404,7 +480,7 @@ const TakeExam = () => {
             <div className="h-screen flex items-center justify-center bg-[#222831] text-[#EEEEEE]">
                 <div className="bg-[#393E46] p-10 rounded-lg shadow-2xl text-center border-t-4 border-red-600">
                     <h1 className="text-4xl font-bold text-red-500 mb-4">EXAM TERMINATED</h1>
-                    <p className="text-lg">Security violation detected (Tab Switching).</p>
+                    <p className="text-lg">Your exam has been terminated by the teacher or due to security violations.</p>
                     <button onClick={() => navigate('/')} className="mt-8 px-6 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                         Return Home
                     </button>
@@ -441,8 +517,8 @@ const TakeExam = () => {
         );
     }
 
-    // D. Waiting Room (Quiz not active yet)
-    if (quizStatus !== 'ACTIVE') {
+    // D. Waiting Room (Quiz not active yet) or Activation Transition
+    if (quizStatus !== 'ACTIVE' || isActivating) {
         const now = new Date();
         const startTime = quizSchedule?.start_time ? new Date(quizSchedule.start_time) : null;
         const endTime = quizSchedule?.end_time ? new Date(quizSchedule.end_time) : null;
@@ -455,6 +531,42 @@ const TakeExam = () => {
             showCountdown = true;
         } else if (endTime && now > endTime) {
             message = "This quiz has ended.";
+        }
+
+        // Show activation animation when transitioning
+        if (isActivating) {
+            return (
+                <div className="h-screen flex items-center justify-center bg-gradient-to-br from-green-500 to-emerald-600">
+                    <div className="bg-white p-10 rounded-2xl shadow-2xl text-center max-w-md mx-4 transform scale-105 animate-pulse">
+                        {/* Success Animation */}
+                        <div className="mb-6 relative">
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-24 h-24 border-8 border-green-200 rounded-full"></div>
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center animate-ping">
+                                <div className="w-24 h-24 border-8 border-green-500 rounded-full"></div>
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <svg className="w-16 h-16 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <h1 className="text-3xl font-bold text-green-700 mb-2 animate-bounce">Quiz Activated!</h1>
+                        <p className="text-green-600 mb-6 font-medium">Starting your exam now...</p>
+                        
+                        <div className="flex items-center justify-center gap-2 text-green-600">
+                            <span>Loading exam</span>
+                            <div className="flex gap-1">
+                                <div className="w-2 h-2 bg-green-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-green-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-green-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         return (

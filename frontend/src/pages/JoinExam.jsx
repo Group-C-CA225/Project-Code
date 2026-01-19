@@ -78,8 +78,19 @@ const JoinExam = () => {
         setLoading(true);
         
         try {
-            // Check if student already submitted this quiz
+            // Check if student already submitted this quiz or was blocked
             const checkResponse = await api.get(`/api/exam/check-submission?code=${code}&student_id=${encodeURIComponent(studentId.trim())}`);
+            
+            if (checkResponse.is_blocked) {
+                setLoading(false);
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Access Denied',
+                    text: checkResponse.message || 'Your exam was terminated due to security violations. You cannot retake this exam.',
+                    confirmButtonColor: '#DC2626'
+                });
+                return;
+            }
             
             if (checkResponse.already_submitted) {
                 setLoading(false);
@@ -225,7 +236,7 @@ const JoinExam = () => {
                             <form onSubmit={handleJoin} className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-[#374151] mb-1">
-                                        Student ID / Name
+                                        Student ID
                                     </label>
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -236,7 +247,7 @@ const JoinExam = () => {
                                             value={studentId}
                                             onChange={(e) => setStudentId(e.target.value)}
                                             className="w-full pl-10 pr-4 py-2.5 border border-[#D1D5DB] rounded-lg focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent outline-none transition text-sm md:text-base"
-                                            placeholder="Enter your student ID or name"
+                                            placeholder="Enter your student ID"
                                             required
                                         />
                                     </div>

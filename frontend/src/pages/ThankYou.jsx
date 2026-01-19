@@ -18,7 +18,7 @@ const ThankYou = () => {
                 
                 <div className="bg-[#EFF6FF] border-l-4 border-[#0EA5E9] p-4 rounded-lg mb-6">
                     <p className="text-sm text-[#1E40AF]">
-                        Your teacher will review your submission. You may now close this window.
+                        Your results have been processed automatically. You may now close this window.
                     </p>
                 </div>
                 
