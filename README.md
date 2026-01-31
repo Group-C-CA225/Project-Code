@@ -7,27 +7,33 @@ A modern, full-stack quiz and exam management platform with real-time monitoring
 ### For Teachers
 - **Quiz Management**: Create, edit, duplicate, and schedule quizzes with ease
 - **Real-Time Monitoring**: Track students taking exams live with session tracking and heartbeat monitoring
-- **AI-Powered Grading**: Automatic grading for MCQ, True/False, and essay questions using AI
+- **AI-Powered Grading**: Intelligent grading for MCQ, True/False, and written questions with conceptual understanding
+- **Retake Control**: Enable or disable quiz retakes per quiz with automatic score replacement
 - **Analytics Dashboard**: View comprehensive statistics, score distribution, and performance insights
 - **Class Management**: Organize and filter quizzes by class or section
 - **Flexible Scheduling**: Set start and end times for timed quiz access
+- **Session Control**: Pause, resume, block, or cancel student sessions in real-time
 - **Export Data**: Export quiz results and analytics to CSV for reporting
 - **Smart Actions Menu**: Intuitive dropdown menu with intelligent positioning for quiz actions
 
 ### For Students
 - **Easy Access**: Join quizzes using simple access codes - no account required
-- **Multiple Question Types**: Answer MCQ, True/False, and essay questions
-- **Instant Results**: View detailed results with correct answers and feedback (when enabled by teacher)
+- **Multiple Question Types**: Answer MCQ, True/False, and written questions
+- **Instant Results**: View detailed results with correct answers and AI feedback (when enabled by teacher)
+- **Retake Option**: Retake quizzes when enabled by teacher (new score replaces old score)
 - **Clean Interface**: Intuitive, distraction-free exam experience
 - **Progress Tracking**: See your progress during the exam
+- **Security Monitoring**: Tab switching and copy/paste detection for exam integrity
 
 ### Technical Features
 - **Responsive Design**: Works seamlessly on desktop, tablet, and mobile devices
-- **Real-Time Updates**: Live session monitoring with automatic heartbeat tracking
-- **Secure Authentication**: Token-based teacher authentication
+- **Real-Time Updates**: Live session monitoring with 2-second heartbeat tracking
+- **Secure Authentication**: Token-based teacher authentication with email verification
 - **RESTful API**: Clean, well-structured backend API architecture
 - **Modern UI**: Built with React, Tailwind CSS, and smooth animations
 - **Smart Dropdowns**: Context-aware menus that adapt to screen position
+- **AI Integration**: OpenAI GPT-4 integration with intelligent fallback grading
+- **Session Management**: Comprehensive tracking with violation detection and abandonment handling
 
 ## 📋 Prerequisites
 
@@ -56,12 +62,12 @@ mysql -u root -p
 CREATE DATABASE quiz_platform CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 EXIT;
 
-mysql -u root -p quiz_platform < backend/migrations/complete_migration.sql
+mysql -u root -p quiz_platform < backend/migrations/database_schema.sql
 ```
 
 ### 3. Backend Configuration
 
-Edit `backend/config/Database.php` with your database credentials:
+**Database Configuration**: Edit `backend/config/Database.php` with your database credentials:
 
 ```php
 private $host = "localhost";
@@ -70,7 +76,13 @@ private $username = "root";
 private $password = "your_password";
 ```
 
-**Optional**: Configure AI Service for essay grading by editing `backend/services/AIService.php` with your AI API credentials.
+**AI Service Configuration** (Optional but Recommended): Create `backend/.env` file for AI grading:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Without an API key, the system uses an improved fallback grading algorithm based on keyword matching. For best results with written questions, configure the OpenAI API key.
 
 ### 4. Frontend Setup
 
@@ -198,15 +210,24 @@ After installation, register a teacher account through the application at `/regi
 ## 🔧 Configuration Options
 
 ### Quiz Settings
-- **Duration**: Set time limit in minutes
-- **Scheduling**: Define start and end times
-- **Results Display**: Choose whether students see results
-- **Class Filter**: Organize by class/section
+- **Duration**: Set time limit in minutes (e.g., 30, 60, 90 minutes)
+- **Scheduling**: Define start and end times for automatic activation
+- **Results Display**: Choose whether students see results immediately after submission
+- **Allow Retake**: Enable students to retake the quiz (new score replaces old score)
+- **Class Filter**: Organize and restrict quizzes by class/section
+- **Status Control**: Set quiz as ACTIVE, INACTIVE, or scheduled
 
 ### Question Types
-- **MCQ**: Multiple choice with 4 options
-- **True/False**: Binary choice questions
-- **Essay**: Open-ended questions with AI grading
+- **MCQ**: Multiple choice with up to 4 options (auto-graded)
+- **True/False**: Binary choice questions (auto-graded)
+- **Written**: Open-ended questions with AI-powered grading that understands paraphrasing and conceptual answers
+
+### AI Grading Features
+- **Conceptual Understanding**: AI evaluates meaning, not just exact word matching
+- **Paraphrasing Support**: Accepts different phrasings of correct answers
+- **Detailed Feedback**: Provides constructive feedback for each answer
+- **Fallback Grading**: Intelligent keyword-based grading when AI is unavailable
+- **Score Conversion**: Properly converts AI scores (0-100) to question points
 
 ## 🐛 Troubleshooting
 
@@ -224,10 +245,12 @@ After installation, register a teacher account through the application at `/regi
 - Verify backend is running and accessible
 - Check browser console for errors
 
-### AI Grading Not Working
-- Verify AI service configuration in `AIService.php`
-- Check API key is valid
-- Ensure network connectivity to AI service
+### AI Grading Issues
+- Check if `OPENAI_API_KEY` is set in `backend/.env`
+- Verify API key is valid and has credits
+- System automatically falls back to keyword matching if AI unavailable
+- Test grading with `php backend/test_ai_grading.php`
+- Review error logs for API connection issues
 
 ## 🔒 Security Notes
 
@@ -240,16 +263,18 @@ After installation, register a teacher account through the application at `/regi
 
 ## 📊 Database Schema
 
-The platform uses 7 main tables:
+The platform uses 9 main tables:
 - **Teachers**: User accounts and authentication
-- **Quizzes**: Quiz information, scheduling, and settings
-- **Questions**: Quiz questions with multiple types (MCQ, True/False, Essay)
+- **Pending Registrations**: Email verification for new teacher accounts
+- **Password Resets**: Password reset token management
+- **Quizzes**: Quiz information, scheduling, settings, and retake control
+- **Questions**: Quiz questions with multiple types (MCQ, True/False, Written)
 - **Students**: Student submissions and scores
-- **Student Answers**: Individual answers with grading results
-- **Exam Sessions**: Real-time session tracking for monitoring
+- **Student Answers**: Individual answers with AI grading results and feedback
+- **Exam Sessions**: Real-time session tracking with heartbeat monitoring
 - **Exam Question Progress**: Detailed question-level progress tracking
 
-See `backend/migrations/complete_migration.sql` for the complete schema.
+See `backend/migrations/database_schema.sql` for the complete schema.
 
 ## 🤝 Contributing
 
@@ -270,26 +295,49 @@ For issues and questions:
 - Review existing issues
 - Create a new issue with detailed information
 
-## 🎨 UI/UX Improvements
+## 🎨 Recent Updates & Improvements
 
-Recent updates include:
+### AI Grading Enhancements (v2.0)
+- **Fixed Score Display**: Properly converts AI scores (0-100) to question points (e.g., "8/10" instead of "80/10")
+- **Improved Fallback Grading**: More lenient keyword matching that accepts paraphrasing
+- **Conceptual Understanding**: AI now rewards understanding over exact wording
+- **Better Feedback**: More constructive and encouraging feedback messages
+
+### Retake System
+- **Teacher Control**: Enable/disable retakes per quiz
+- **Score Replacement**: New score automatically replaces old score
+- **Confirmation Dialog**: Students confirm before retaking with previous score shown
+- **Security**: Blocked students (security violations) cannot retake regardless of setting
+
+### Session Management
+- **Real-time Monitoring**: 2-second heartbeat for instant updates
+- **Teacher Controls**: Pause, resume, block, or cancel individual sessions
+- **Violation Tracking**: Automatic detection and logging of security violations
+- **Abandonment Detection**: Auto-cleanup of stale sessions after 2 minutes
+
+### UI/UX Improvements
 - **Intelligent Action Menu**: Dropdown with smart positioning (opens up/down based on available space)
 - **Visual Hierarchy**: Primary actions prominent, secondary actions in menu
 - **Responsive Design**: Optimized for all screen sizes
 - **Real-time Feedback**: Loading states and success/error messages
+- **Waiting Room**: Smooth transition when quiz activates with countdown timer
 
 ## 🚀 Future Enhancements
 
 - [ ] Question bank and templates
 - [ ] Bulk import questions (CSV/Excel)
-- [ ] Advanced analytics with charts
+- [ ] Advanced analytics with charts and graphs
 - [ ] Student performance tracking over time
-- [ ] Email notifications
+- [ ] Email notifications for quiz activation
 - [ ] Multi-language support
-- [ ] Question randomization
-- [ ] Partial credit for essay questions
-- [ ] Plagiarism detection
+- [ ] Question randomization per student
+- [ ] Manual grade override for teachers
+- [ ] Plagiarism detection for written answers
 - [ ] Video proctoring integration
+- [ ] Mobile app for iOS and Android
+- [ ] Offline mode with sync
+- [ ] Question difficulty levels
+- [ ] Adaptive testing based on performance
 
 ---
 

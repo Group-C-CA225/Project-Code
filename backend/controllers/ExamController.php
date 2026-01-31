@@ -228,12 +228,22 @@ class ExamController {
                         $qData['correct_answer'], 
                         $studentVal
                     );
-                    $score = isset($grading['score']) ? $grading['score'] : 0;
+                    
+                    // AI returns score on 0-100 scale, convert to question points
+                    $aiScore = isset($grading['score']) ? $grading['score'] : 0;
+                    $questionPoints = isset($qData['points']) ? (int)$qData['points'] : 1;
+                    
+                    // Convert AI percentage to actual points: (AI_Score / 100) * Question_Points
+                    $score = ($aiScore / 100) * $questionPoints;
+                    
                     $feedback = isset($grading['feedback']) ? $grading['feedback'] : "No feedback available.";
                 }
 
                 // Save Result - Use student_answers table matching schema (including feedback)
-                $isCorrect = ($score >= 50) ? 1 : 0; // Consider 50+ as correct for written answers
+                // For written answers, consider 50% of max points as passing threshold
+                $questionMaxPoints = isset($qData['points']) ? (int)$qData['points'] : 1;
+                $passingThreshold = $questionMaxPoints * 0.5;
+                $isCorrect = ($score >= $passingThreshold) ? 1 : 0;
                 $ins = "INSERT INTO student_answers (student_id, question_id, answer_text, is_correct, points_earned, feedback) 
                         VALUES (:sid, :qid, :ans, :correct, :points, :feedback)";
                 $this->db->prepare($ins)->execute([
@@ -299,8 +309,8 @@ class ExamController {
             exit;
         }
         
-        // Get quiz ID from code
-        $stmt = $this->db->prepare("SELECT id FROM quizzes WHERE access_code = :code");
+        // Get quiz ID and settings from code
+        $stmt = $this->db->prepare("SELECT id, allow_retake FROM quizzes WHERE access_code = :code");
         $stmt->execute([':code' => $code]);
         $quiz = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -313,18 +323,90 @@ class ExamController {
             exit;
         }
         
+        $allowRetake = isset($quiz['allow_retake']) ? (bool)$quiz['allow_retake'] : false;
+        
+        // Check if student was blocked/terminated (ALWAYS block, regardless of retake setting)
+        $blockCheckStmt = $this->db->prepare("
+            SELECT es.id, es.status 
+            FROM exam_sessions es
+            WHERE es.quiz_id = :qid 
+            AND es.student_identifier = :sid 
+            AND es.status = 'ABANDONED'
+            ORDER BY es.last_activity DESC
+            LIMIT 1
+        ");
+        $blockCheckStmt->execute([
+            ':qid' => $quiz['id'],
+            ':sid' => $studentId
+        ]);
+        $blockedSession = $blockCheckStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($blockedSession) {
+            http_response_code(200);
+            echo json_encode([
+                "success" => true,
+                "already_submitted" => false,
+                "is_blocked" => true,
+                "allow_retake" => false,
+                "message" => "Access denied. Your exam was terminated due to security violations or by the teacher. You cannot retake this exam."
+            ]);
+            exit;
+        }
+        
         // Check if student already submitted
-        $checkStmt = $this->db->prepare("SELECT id FROM students WHERE quiz_id = :qid AND student_identifier = :sid AND status = 'SUBMITTED'");
+        $checkStmt = $this->db->prepare("
+            SELECT s.id, s.status, s.final_score, s.finished_at
+            FROM students s
+            WHERE s.quiz_id = :qid 
+            AND s.student_identifier = :sid 
+            AND s.status = 'SUBMITTED'
+            ORDER BY s.finished_at DESC
+            LIMIT 1
+        ");
         $checkStmt->execute([
             ':qid' => $quiz['id'],
             ':sid' => $studentId
         ]);
-        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        $submission = $checkStmt->fetch(PDO::FETCH_ASSOC);
         
+        if ($submission) {
+            // Student has submitted - check if retakes are allowed
+            if (!$allowRetake) {
+                http_response_code(200);
+                echo json_encode([
+                    "success" => true,
+                    "already_submitted" => true,
+                    "is_blocked" => false,
+                    "allow_retake" => false,
+                    "previous_score" => $submission['final_score'],
+                    "submitted_at" => $submission['finished_at'],
+                    "message" => "You have already submitted this quiz. Retakes are not allowed."
+                ]);
+                exit;
+            } else {
+                // Retakes allowed - student can join again
+                http_response_code(200);
+                echo json_encode([
+                    "success" => true,
+                    "already_submitted" => true,
+                    "is_blocked" => false,
+                    "allow_retake" => true,
+                    "previous_score" => $submission['final_score'],
+                    "submitted_at" => $submission['finished_at'],
+                    "message" => "You have already submitted this quiz, but retakes are allowed. Your previous score: " . round($submission['final_score'], 2) . "%"
+                ]);
+                exit;
+            }
+        }
+        
+        // No previous submission or block - student can join
         http_response_code(200);
         echo json_encode([
             "success" => true,
-            "already_submitted" => $existing ? true : false
+            "already_submitted" => false,
+            "is_blocked" => false,
+            "allow_retake" => $allowRetake,
+            "message" => "You can join this quiz."
         ]);
     }
 

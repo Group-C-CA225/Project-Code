@@ -137,26 +137,66 @@ Return ONLY valid JSON (no markdown, no code blocks):
             return ["score" => 100, "feedback" => "Perfect match!"];
         }
         
-        // Check if student answer contains all key words from model answer
-        $modelWords = preg_split('/\s+/', $model);
-        $matchCount = 0;
-        
-        foreach ($modelWords as $word) {
-            if (strlen($word) > 3 && stripos($student, $word) !== false) {
-                $matchCount++;
+        // Check if student answer is substantially contained in model or vice versa
+        // This handles cases where student gives a shorter but correct answer
+        if (strlen($student) > 10) {
+            if (stripos($model, $student) !== false) {
+                return ["score" => 90, "feedback" => "Excellent! Your answer captures the key concepts."];
+            }
+            if (stripos($student, $model) !== false) {
+                return ["score" => 95, "feedback" => "Great answer! Very comprehensive."];
             }
         }
         
-        $similarity = count($modelWords) > 0 ? ($matchCount / count($modelWords)) * 100 : 0;
+        // Extract meaningful keywords (words longer than 3 chars, excluding common words)
+        $commonWords = ['that', 'this', 'with', 'from', 'have', 'been', 'were', 'will', 'would', 'could', 'should', 'their', 'there', 'these', 'those', 'which', 'where', 'when'];
         
-        if ($similarity >= 80) {
-            return ["score" => 90, "feedback" => "Good answer! Contains most key concepts."];
-        } elseif ($similarity >= 50) {
-            return ["score" => 70, "feedback" => "Partially correct. Some key concepts are present."];
-        } elseif ($similarity >= 30) {
-            return ["score" => 40, "feedback" => "Answer is incomplete or missing key concepts."];
+        $modelWords = array_filter(
+            preg_split('/\s+/', $model),
+            function($w) use ($commonWords) { 
+                return strlen($w) > 3 && !in_array($w, $commonWords); 
+            }
+        );
+        
+        $matchCount = 0;
+        $keywordMatches = [];
+        
+        foreach ($modelWords as $word) {
+            if (stripos($student, $word) !== false) {
+                $matchCount++;
+                $keywordMatches[] = $word;
+            }
+        }
+        
+        $totalKeywords = count($modelWords);
+        $similarity = $totalKeywords > 0 ? ($matchCount / $totalKeywords) * 100 : 0;
+        
+        // More lenient scoring - focus on conceptual understanding
+        if ($similarity >= 60) {
+            return [
+                "score" => 85, 
+                "feedback" => "Great answer! You've captured the main concepts."
+            ];
+        } elseif ($similarity >= 40) {
+            return [
+                "score" => 70, 
+                "feedback" => "Good understanding shown. Your answer covers most key points."
+            ];
+        } elseif ($similarity >= 25) {
+            return [
+                "score" => 50, 
+                "feedback" => "Partially correct. Your answer touches on some concepts but could be more complete."
+            ];
+        } elseif ($similarity >= 15) {
+            return [
+                "score" => 30, 
+                "feedback" => "Your answer shows some understanding but misses several key concepts."
+            ];
         } else {
-            return ["score" => 10, "feedback" => "Answer does not match the expected response."];
+            return [
+                "score" => 10, 
+                "feedback" => "Your answer doesn't match the expected response. Please review the material."
+            ];
         }
     }
 }

@@ -14,6 +14,7 @@ $router = new Router();
 
 // Auth Routes
 $router->post('/api/teacher/register', 'AuthController@register');
+$router->post('/api/verify-email', 'AuthController@verifyEmail');
 $router->post('/api/teacher/login', 'AuthController@login');
 $router->get('/api/teacher/profile', 'AuthController@getProfile');
 $router->put('/api/teacher/profile', 'AuthController@updateProfile');
@@ -55,6 +56,7 @@ $router->post('/api/realtime/session/end', 'RealtimeController@endSession');
 $router->post('/api/realtime/session/violation', 'RealtimeController@reportViolation');
 $router->get('/api/realtime/monitor', 'RealtimeController@getQuizMonitoring'); // Usage: ?quiz_id=123
 $router->post('/api/realtime/cleanup', 'RealtimeController@cleanupSessions');
+$router->post('/api/realtime/control', 'RealtimeController@controlExam');
 
 // Run the router
 $router->dispatch();

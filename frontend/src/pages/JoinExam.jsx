@@ -81,6 +81,7 @@ const JoinExam = () => {
             // Check if student already submitted this quiz or was blocked
             const checkResponse = await api.get(`/api/exam/check-submission?code=${code}&student_id=${encodeURIComponent(studentId.trim())}`);
             
+            // ALWAYS block if student was terminated/blocked (security violations)
             if (checkResponse.is_blocked) {
                 setLoading(false);
                 await Swal.fire({
@@ -92,15 +93,46 @@ const JoinExam = () => {
                 return;
             }
             
+            // Check if already submitted
             if (checkResponse.already_submitted) {
-                setLoading(false);
-                await Swal.fire({
-                    icon: 'warning',
-                    title: 'Already Submitted',
-                    text: 'You have already submitted this quiz. You cannot take it again.',
-                    confirmButtonColor: '#0EA5E9'
+                // If retakes are NOT allowed, block the student
+                if (!checkResponse.allow_retake) {
+                    setLoading(false);
+                    await Swal.fire({
+                        icon: 'warning',
+                        title: 'Already Submitted',
+                        html: `
+                            <p>You have already submitted this quiz.</p>
+                            ${checkResponse.previous_score ? `<p class="mt-2"><strong>Your Score: ${Math.round(checkResponse.previous_score)}%</strong></p>` : ''}
+                            <p class="mt-2 text-sm text-gray-600">Retakes are not allowed for this quiz.</p>
+                        `,
+                        confirmButtonColor: '#0EA5E9'
+                    });
+                    return;
+                }
+                
+                // Retakes ARE allowed - show confirmation dialog
+                const result = await Swal.fire({
+                    icon: 'info',
+                    title: 'Retake Quiz?',
+                    html: `
+                        <p>You have already submitted this quiz.</p>
+                        ${checkResponse.previous_score ? `<p class="mt-2"><strong>Previous Score: ${Math.round(checkResponse.previous_score)}%</strong></p>` : ''}
+                        <p class="mt-3 text-sm text-gray-600">The teacher has enabled retakes for this quiz.</p>
+                        <p class="mt-1 text-sm text-gray-600"><strong>Note:</strong> Your new score will replace your previous score.</p>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: 'Retake Quiz',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#0EA5E9',
+                    cancelButtonColor: '#6B7280'
                 });
-                return;
+                
+                if (!result.isConfirmed) {
+                    setLoading(false);
+                    return;
+                }
+                // If confirmed, continue to join the exam
             }
         } catch (err) {
             // If check fails, continue (don't block student)

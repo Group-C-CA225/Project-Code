@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 try {
     require_once '../config/Database.php';
     require_once '../utils/EmailService.php';
+    require_once '../utils/SimpleEmailService.php';
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Server configuration error']);
     exit;
@@ -74,7 +75,7 @@ if ($action === 'request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Generate reset token
     $token = bin2hex(random_bytes(32));
-    $expiresAt = date('Y-m-d H:i:s', strtotime('+1 hour'));
+    $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes')); // Reduced from 1 hour to 15 minutes
     
     // Save token to database
     $stmt = $db->prepare("
@@ -88,7 +89,8 @@ if ($action === 'request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     ]);
     
     // Send email using EmailService
-    $resetLink = getenv('APP_URL') . "/reset-password?token=" . $token;
+    $appUrl = getenv('APP_URL') ?: 'http://localhost:5173';
+    $resetLink = $appUrl . "/reset-password?token=" . $token;
     $subject = "Password Reset Request - Quiz Platform";
     $htmlBody = "
         <html>
@@ -102,7 +104,7 @@ if ($action === 'request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
                 <p>Or copy and paste this link into your browser:</p>
                 <p style='background: #f3f4f6; padding: 10px; border-radius: 5px; word-break: break-all;'>{$resetLink}</p>
-                <p style='color: #666; font-size: 14px;'>This link will expire in 1 hour.</p>
+                <p style='color: #666; font-size: 14px;'>This link will expire in 15 minutes.</p>
                 <p style='color: #666; font-size: 14px;'>If you didn't request this, please ignore this email.</p>
                 <hr style='border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;'>
                 <p style='color: #999; font-size: 12px; text-align: center;'>Quiz Platform - Automated Email</p>
@@ -115,15 +117,21 @@ if ($action === 'request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $emailSent = $emailService->sendEmail($email, $subject, $htmlBody);
     
     if (!$emailSent) {
-        $errorMsg = $emailService->getLastError();
-        error_log("Failed to send password reset email to: " . $email . " - Error: " . $errorMsg);
-        http_response_code(500);
-        echo json_encode([
-            'success' => false, 
-            'message' => 'Failed to send email. Please try again later.',
-            'debug' => $errorMsg // Remove this in production
-        ]);
-        exit;
+        // Try simple email service as fallback
+        $simpleEmailService = new SimpleEmailService();
+        $emailSent = $simpleEmailService->sendEmail($email, $subject, $htmlBody);
+        
+        if (!$emailSent) {
+            $errorMsg = $simpleEmailService->getLastError();
+            error_log("Failed to send password reset email to: " . $email . " - Error: " . $errorMsg);
+            http_response_code(500);
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Failed to send email. Please contact administrator.',
+                'debug' => $errorMsg // Remove this in production
+            ]);
+            exit;
+        }
     }
     
     echo json_encode([
@@ -214,7 +222,7 @@ if ($action === 'reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Update password
         $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
-        $stmt = $db->prepare("UPDATE teachers SET password = ? WHERE id = ?");
+        $stmt = $db->prepare("UPDATE teachers SET password_hash = ? WHERE id = ?");
         $result = $stmt->execute([$hashedPassword, $tokenData['teacher_id']]);
         
         if (!$result) {
@@ -240,3 +248,4 @@ if ($action === 'reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 http_response_code(400);
 echo json_encode(['success' => false, 'message' => 'Invalid request']);
+

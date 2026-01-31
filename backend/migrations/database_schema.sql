@@ -1,25 +1,36 @@
 -- ============================================================================
--- COMPLETE DATABASE MIGRATION FOR QUIZ PLATFORM
+-- QUIZ PLATFORM - COMPLETE DATABASE SCHEMA
 -- ============================================================================
 -- This file contains the complete database schema for the Quiz Platform
 -- Run this file to set up a fresh database with all required tables
 -- 
--- Usage: mysql -u root -p quiz_platform < complete_migration.sql
+-- Usage: mysql -u root -p quiz_platform < database_schema.sql
 -- 
--- Version: 1.0
--- Last Updated: 2026-01-14
+-- Version: 2.0
+-- Last Updated: 2026-01-31
 -- ============================================================================
 
 -- Set character set and collation
 SET NAMES utf8mb4;
 SET CHARACTER SET utf8mb4;
 
+-- Drop existing tables if they exist (for clean installation)
+DROP TABLE IF EXISTS `exam_question_progress`;
+DROP TABLE IF EXISTS `exam_sessions`;
+DROP TABLE IF EXISTS `student_answers`;
+DROP TABLE IF EXISTS `students`;
+DROP TABLE IF EXISTS `questions`;
+DROP TABLE IF EXISTS `quizzes`;
+DROP TABLE IF EXISTS `pending_registrations`;
+DROP TABLE IF EXISTS `password_resets`;
+DROP TABLE IF EXISTS `teachers`;
+
 -- ============================================================================
 -- 1. TEACHERS TABLE
 -- ============================================================================
 -- Stores teacher accounts with authentication credentials
 
-CREATE TABLE IF NOT EXISTS `teachers` (
+CREATE TABLE `teachers` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `full_name` VARCHAR(100) NOT NULL,
     `email` VARCHAR(100) UNIQUE NOT NULL,
@@ -32,11 +43,45 @@ CREATE TABLE IF NOT EXISTS `teachers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 2. QUIZZES TABLE
+-- 2. PENDING REGISTRATIONS TABLE
+-- ============================================================================
+-- Stores pending teacher registrations awaiting email verification
+
+CREATE TABLE `pending_registrations` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `username` VARCHAR(50) NOT NULL,
+    `email` VARCHAR(100) NOT NULL,
+    `password_hash` VARCHAR(255) NOT NULL,
+    `otp` VARCHAR(6) NOT NULL,
+    `otp_expires_at` TIMESTAMP NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_email` (`email`),
+    INDEX `idx_otp` (`otp`),
+    INDEX `idx_expires` (`otp_expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 3. PASSWORD RESETS TABLE
+-- ============================================================================
+-- Stores password reset tokens for teachers
+
+CREATE TABLE `password_resets` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `email` VARCHAR(100) NOT NULL,
+    `token` VARCHAR(64) NOT NULL,
+    `expires_at` TIMESTAMP NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_email` (`email`),
+    INDEX `idx_token` (`token`),
+    INDEX `idx_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 4. QUIZZES TABLE
 -- ============================================================================
 -- Stores quiz/exam information with scheduling and access control
 
-CREATE TABLE IF NOT EXISTS `quizzes` (
+CREATE TABLE `quizzes` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `title` VARCHAR(255) NOT NULL,
     `description` TEXT,
@@ -48,6 +93,7 @@ CREATE TABLE IF NOT EXISTS `quizzes` (
     `class` VARCHAR(100) NULL,
     `active_sessions_count` INT DEFAULT 0,
     `show_results_to_students` BOOLEAN DEFAULT FALSE,
+    `allow_retake` BOOLEAN DEFAULT FALSE,
     `start_time` DATETIME NULL,
     `end_time` DATETIME NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -57,15 +103,16 @@ CREATE TABLE IF NOT EXISTS `quizzes` (
     INDEX `idx_access_code` (`access_code`),
     INDEX `idx_status` (`status`),
     INDEX `idx_class` (`class`),
+    INDEX `idx_allow_retake` (`allow_retake`),
     INDEX `idx_schedule` (`start_time`, `end_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 3. QUESTIONS TABLE
+-- 5. QUESTIONS TABLE
 -- ============================================================================
 -- Stores questions for each quiz with multiple question types
 
-CREATE TABLE IF NOT EXISTS `questions` (
+CREATE TABLE `questions` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `quiz_id` INT NOT NULL,
     `type` VARCHAR(50) DEFAULT 'multiple_choice',
@@ -80,11 +127,11 @@ CREATE TABLE IF NOT EXISTS `questions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 4. STUDENTS TABLE
+-- 6. STUDENTS TABLE
 -- ============================================================================
 -- Stores student submissions and overall quiz results
 
-CREATE TABLE IF NOT EXISTS `students` (
+CREATE TABLE `students` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `quiz_id` INT NOT NULL,
     `student_identifier` VARCHAR(100) NOT NULL,
@@ -102,11 +149,11 @@ CREATE TABLE IF NOT EXISTS `students` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 5. STUDENT ANSWERS TABLE
+-- 7. STUDENT ANSWERS TABLE
 -- ============================================================================
 -- Stores individual answers for each question with grading results
 
-CREATE TABLE IF NOT EXISTS `student_answers` (
+CREATE TABLE `student_answers` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `student_id` INT NOT NULL,
     `question_id` INT NOT NULL,
@@ -124,14 +171,15 @@ CREATE TABLE IF NOT EXISTS `student_answers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 6. EXAM SESSIONS TABLE
+-- 8. EXAM SESSIONS TABLE
 -- ============================================================================
 -- Tracks real-time exam sessions for monitoring
 
-CREATE TABLE IF NOT EXISTS `exam_sessions` (
+CREATE TABLE `exam_sessions` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `student_id` INT NOT NULL,
     `quiz_id` INT NOT NULL,
+    `student_identifier` VARCHAR(100) NOT NULL,
     `session_token` VARCHAR(64) NOT NULL UNIQUE,
     `current_question_index` INT DEFAULT 0,
     `questions_answered` INT DEFAULT 0,
@@ -141,21 +189,26 @@ CREATE TABLE IF NOT EXISTS `exam_sessions` (
     `last_activity` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `last_heartbeat` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `status` ENUM('ACTIVE', 'PAUSED', 'COMPLETED', 'ABANDONED') DEFAULT 'ACTIVE',
+    `paused_by_teacher` BOOLEAN DEFAULT FALSE,
+    `paused_at` TIMESTAMP NULL,
+    `violations_count` INT DEFAULT 0,
+    `last_violation` TIMESTAMP NULL,
     FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`quiz_id`) REFERENCES `quizzes`(`id`) ON DELETE CASCADE,
     INDEX `idx_quiz_status` (`quiz_id`, `status`),
     INDEX `idx_student_quiz` (`student_id`, `quiz_id`),
     INDEX `idx_session_token` (`session_token`),
     INDEX `idx_last_activity` (`last_activity`),
-    INDEX `idx_last_heartbeat` (`last_heartbeat`)
+    INDEX `idx_last_heartbeat` (`last_heartbeat`),
+    INDEX `idx_student_identifier` (`student_identifier`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 7. EXAM QUESTION PROGRESS TABLE
+-- 9. EXAM QUESTION PROGRESS TABLE
 -- ============================================================================
 -- Tracks detailed progress on individual questions during exam
 
-CREATE TABLE IF NOT EXISTS `exam_question_progress` (
+CREATE TABLE `exam_question_progress` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `session_id` INT NOT NULL,
     `question_id` INT NOT NULL,
@@ -176,19 +229,19 @@ CREATE TABLE IF NOT EXISTS `exam_question_progress` (
 -- Uncomment the following lines to insert sample data for testing
 
 -- Sample Teacher Account
--- Password: password (hashed with bcrypt)
+-- Password: password123 (hashed with bcrypt)
 -- INSERT INTO `teachers` (`full_name`, `email`, `password_hash`) 
 -- VALUES ('Demo Teacher', 'teacher@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi');
 
 -- Sample Quiz
--- INSERT INTO `quizzes` (`title`, `description`, `teacher_id`, `access_code`, `duration_minutes`, `status`, `class`) 
--- VALUES ('Sample Quiz', 'This is a demo quiz', 1, 'DEMO123', 30, 'ACTIVE', 'Grade 10');
+-- INSERT INTO `quizzes` (`title`, `description`, `teacher_id`, `access_code`, `duration_minutes`, `status`, `class`, `show_results_to_students`, `allow_retake`) 
+-- VALUES ('Sample Quiz', 'This is a demo quiz for testing', 1, 'DEMO123', 30, 'ACTIVE', 'Grade 10', TRUE, FALSE);
 
 -- Sample Questions
 -- INSERT INTO `questions` (`quiz_id`, `type`, `question_text`, `options`, `correct_answer`, `points`) VALUES
--- (1, 'MCQ', 'What is 2 + 2?', '["2", "3", "4", "5"]', '4', 1),
--- (1, 'TRUE_FALSE', 'The Earth is flat.', '["True", "False"]', 'False', 1),
--- (1, 'ESSAY', 'Explain the water cycle.', NULL, 'The water cycle involves evaporation, condensation, and precipitation.', 5);
+-- (1, 'MCQ', 'What is 2 + 2?', '["2", "3", "4", "5"]', '4', 10),
+-- (1, 'TRUE_FALSE', 'The Earth is flat.', '["True", "False"]', 'False', 10),
+-- (1, 'WRITTEN', 'Define Node.js', NULL, 'an open-source, cross-platform JavaScript runtime environment that allows developers to execute JavaScript code outside of a web browser', 10);
 
 -- ============================================================================
 -- VERIFICATION QUERIES
@@ -207,17 +260,30 @@ CREATE TABLE IF NOT EXISTS `exam_question_progress` (
 --     (SELECT COUNT(*) FROM students) as students,
 --     (SELECT COUNT(*) FROM student_answers) as student_answers,
 --     (SELECT COUNT(*) FROM exam_sessions) as exam_sessions,
---     (SELECT COUNT(*) FROM exam_question_progress) as exam_question_progress;
+--     (SELECT COUNT(*) FROM exam_question_progress) as exam_question_progress,
+--     (SELECT COUNT(*) FROM pending_registrations) as pending_registrations,
+--     (SELECT COUNT(*) FROM password_resets) as password_resets;
 
 -- ============================================================================
 -- MIGRATION COMPLETE
 -- ============================================================================
 -- All tables have been created successfully!
 -- 
+-- Key Features:
+-- - Teacher authentication with email verification
+-- - Quiz management with scheduling and class filtering
+-- - Multiple question types (MCQ, True/False, Written)
+-- - AI-powered grading for written answers
+-- - Real-time exam monitoring with session tracking
+-- - Student retake control (allow_retake setting)
+-- - Comprehensive analytics and reporting
+-- - Security features (violations tracking, session abandonment)
+-- 
 -- Next Steps:
--- 1. Create a teacher account (register through the app or insert manually)
--- 2. Configure backend/config/Database.php with your credentials
--- 3. Start the application and begin creating quizzes
+-- 1. Configure backend/config/Database.php with your credentials
+-- 2. Set up backend/.env with API keys (optional, for AI grading)
+-- 3. Register a teacher account through the application
+-- 4. Start creating quizzes and sharing access codes with students
 -- 
 -- For support, refer to the README.md file
 -- ============================================================================

@@ -1,6 +1,7 @@
 // API utility functions for making requests to PHP backend
 
-const API_BASE_URL = 'http://localhost/quiz_platform/backend';
+// Use environment variable for production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/quiz_platform/backend';
 
 // Get auth token from localStorage
 function getAuthToken() {
