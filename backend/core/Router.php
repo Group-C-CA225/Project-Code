@@ -18,12 +18,33 @@ class Router {
             
             $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
             
-            // Remove folder prefix if running on localhost/project_folder (case-insensitive)
+            // Remove common folder prefixes (for local development)
+            // This handles both local and production environments
             $path = preg_replace('#^/quiz_platform/backend#i', '', $path);
+            $path = preg_replace('#^/backend#i', '', $path);
             
             // Ensure path starts with /
             if (empty($path) || $path[0] !== '/') {
                 $path = '/' . $path;
+            }
+            
+            // If path is just "/", redirect to a default route or show API info
+            if ($path === '/' || $path === '') {
+                http_response_code(200);
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Quiz Platform API',
+                    'version' => '2.0',
+                    'endpoints' => [
+                        'POST /api/teacher/register' => 'Register teacher account',
+                        'POST /api/teacher/login' => 'Login teacher',
+                        'GET /api/quiz/list' => 'List all quizzes (requires auth)',
+                        'GET /api/exam/start?code=XXX' => 'Start exam with access code',
+                        'POST /api/exam/submit' => 'Submit exam answers'
+                    ]
+                ]);
+                return;
             }
 
             // Try exact match first
@@ -55,7 +76,12 @@ class Router {
             echo json_encode([
                 'success' => false,
                 'error' => "Route not found: $method $path",
-                'available_routes' => array_keys($this->routes[$method] ?? [])
+                'available_routes' => array_keys($this->routes[$method] ?? []),
+                'debug' => [
+                    'request_uri' => $_SERVER['REQUEST_URI'],
+                    'parsed_path' => $path,
+                    'method' => $method
+                ]
             ]);
         } catch (Exception $e) {
             http_response_code(500);

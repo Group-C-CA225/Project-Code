@@ -28,8 +28,7 @@ class CORSHandler {
         } else {
             // Production origins - add your production domain here
             $allowedOrigins = [
-                'https://yourdomain.com',
-                'https://www.yourdomain.com',
+                'https://quizapp-swart-alpha.vercel.app', 
             ];
             
             // For production, you can also use a wildcard or check against a database
@@ -43,6 +42,12 @@ class CORSHandler {
         } elseif ($isDevelopment) {
             // Default fallback for development - use the first allowed origin
             header("Access-Control-Allow-Origin: " . $allowedOrigins[0]);
+        } else {
+            // Production fallback - set to first allowed origin if no match
+            // This helps with debugging but maintains security
+            if (!empty($allowedOrigins)) {
+                header("Access-Control-Allow-Origin: " . $allowedOrigins[0]);
+            }
         }
         // Note: If origin is not in whitelist in production, CORS will fail (security)
         

@@ -117,6 +117,33 @@ npm run dev
 
 The frontend will be available at `http://localhost:5173`
 
+## 🚀 Deployment
+
+### Frontend (Vercel) - Already Done ✅
+Your frontend is already deployed on Vercel.
+
+### Backend Deployment (Recommended: InfinityFree)
+
+**Quick Steps**:
+1. Sign up at [infinityfree.net](https://infinityfree.net) (free, no credit card)
+2. Upload `backend` folder to `htdocs`
+3. Create MySQL database and import `backend/migrations/database_schema.sql`
+4. Update `backend/config/Database.php` with database credentials
+5. Update `backend/utils/headers.php` with your Vercel URL
+6. Add `VITE_API_URL` environment variable in Vercel
+7. Redeploy frontend
+
+**Detailed Guide**: See `DEPLOYMENT.md` for complete step-by-step instructions.
+
+**Quick Reference**: See `QUICK_DEPLOY.txt` for a checklist.
+
+**Alternative Options**:
+- **Railway.app** ($5/month) - Best for production, auto-deploy from GitHub
+- **000webhost** (Free) - Similar to InfinityFree, no ads
+- **Heroku** (Free tier) - Git-based deployment
+
+---
+
 ## 🏗️ Production Build
 
 ### Frontend Build
