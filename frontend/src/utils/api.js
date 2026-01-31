@@ -1,7 +1,7 @@
 // API utility functions for making requests to PHP backend
 
 // Use environment variable for production, fallback to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/quiz_platform/backend';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://quizguard.free.nf';
 
 // Get auth token from localStorage
 function getAuthToken() {
