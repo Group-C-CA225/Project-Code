@@ -1,7 +1,7 @@
 // API utility functions for making requests to PHP backend
 
-// Use environment variable for production, fallback to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://quizguard.free.nf';
+// Use environment variable for production, fallback to relative path (proxy) or localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Get auth token from localStorage
 function getAuthToken() {
@@ -11,10 +11,10 @@ function getAuthToken() {
 // Generic API request function
 async function apiRequest(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-    
+
     // Get auth token
     const token = getAuthToken();
-    
+
     const config = {
         method: options.method || 'GET',
         headers: {

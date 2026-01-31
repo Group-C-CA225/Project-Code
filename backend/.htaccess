@@ -1,9 +1,14 @@
 # Route all API requests through index.php
 # CORS is handled in PHP (backend/utils/headers.php) for better control
 
+Options -MultiViews -Indexes
+
 <IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /quiz_platform/backend/
+RewriteEngine On
+    RewriteBase /
+    
+    # Fix for Authorization header buffering
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
     
     # Don't rewrite if file or directory exists
     RewriteCond %{REQUEST_FILENAME} !-f
